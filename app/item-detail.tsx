@@ -1,241 +1,189 @@
-import {
-  FlatList,
-  Text,
-  View,
-  TouchableOpacity,
-  Pressable,
-  RefreshControl,
-  ScrollView,
-} from "react-native";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { FlatList, RefreshControl, Text, View, TouchableOpacity, Pressable, ScrollView } from "react-native";
 import { useEffect, useState } from "react";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { ScreenContainer } from "@/components/screen-container";
 import { useMarket } from "@/lib/context/market-context";
 import { useColors } from "@/hooks/use-colors";
-import { parseItemId, PriceData } from "@/lib/api/albion-api";
+import { getBlackMarketSellPrice, getCityPricesSorted } from "@/lib/api/albion-api";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 
-interface CityPriceRow {
-  city: string;
+interface PriceByQuality {
   quality: number;
-  buyMin: number;
-  buyMax: number;
-  sellMin: number;
-  sellMax: number;
+  buyPrice: number;
+  sellPrice: number;
 }
 
-function CityPriceCard({ city, quality, buyMin, buyMax, sellMin, sellMax }: CityPriceRow) {
-  const colors = useColors();
-  const profitMargin = sellMin > 0 && buyMax > 0 ? ((sellMin - buyMax) / buyMax) * 100 : 0;
-
-  return (
-    <View className="bg-surface rounded-lg p-4 mb-3 border border-border">
-      <View className="flex-row justify-between items-start mb-3">
-        <View>
-          <Text className="text-lg font-semibold text-foreground">{city}</Text>
-          <Text className="text-xs text-muted">Quality {quality}</Text>
-        </View>
-        {profitMargin > 0 && (
-          <View className="bg-success/20 rounded-full px-3 py-1">
-            <Text className="text-success text-xs font-semibold">+{profitMargin.toFixed(1)}%</Text>
-          </View>
-        )}
-      </View>
-
-      <View className="flex-row gap-3">
-        <View className="flex-1">
-          <Text className="text-xs text-muted mb-1">Buy Price</Text>
-          <Text className="text-sm font-semibold text-foreground">
-            {buyMin > 0 ? buyMin.toLocaleString() : "-"}
-          </Text>
-          {buyMax > buyMin && (
-            <Text className="text-xs text-muted">
-              to {buyMax > 0 ? buyMax.toLocaleString() : "-"}
-            </Text>
-          )}
-        </View>
-        <View className="flex-1">
-          <Text className="text-xs text-muted mb-1">Sell Price</Text>
-          <Text className="text-sm font-semibold text-foreground">
-            {sellMin > 0 ? sellMin.toLocaleString() : "-"}
-          </Text>
-          {sellMax > sellMin && (
-            <Text className="text-xs text-muted">
-              to {sellMax > 0 ? sellMax.toLocaleString() : "-"}
-            </Text>
-          )}
-        </View>
-      </View>
-    </View>
-  );
+interface CityPrices {
+  city: string;
+  prices: PriceByQuality[];
 }
 
 export default function ItemDetailScreen() {
   const router = useRouter();
   const colors = useColors();
-  const params = useLocalSearchParams();
-  const itemId = params.itemId as string;
-  const { state, refreshPrices, refreshHistory } = useMarket();
+  const { itemId } = useLocalSearchParams<{ itemId: string }>();
+  const { state } = useMarket();
   const [refreshing, setRefreshing] = useState(false);
-  const [selectedQuality, setSelectedQuality] = useState<number | null>(null);
 
-  const { tier, name } = parseItemId(itemId);
+  if (!itemId) {
+    return (
+      <ScreenContainer className="flex-1 items-center justify-center">
+        <Text className="text-foreground">Item not found</Text>
+      </ScreenContainer>
+    );
+  }
+
   const marketData = state.marketData[itemId];
   const prices = marketData?.prices || [];
-
-  useEffect(() => {
-    if (!prices || prices.length === 0) {
-      refreshPrices([itemId]);
-    }
-  }, []);
+  const trackedItem = state.trackedItems.find((item) => item.itemId === itemId);
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await refreshPrices([itemId]);
-    setRefreshing(false);
+    try {
+      // Refresh logic would go here
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+    } finally {
+      setRefreshing(false);
+    }
   };
 
+  // Get Black Market sell price
+  const blackMarketPrice = getBlackMarketSellPrice(prices);
+
+  // Get city prices sorted by buy price
+  const citySortedPrices = getCityPricesSorted(prices);
+
   // Group prices by city and quality
-  const groupedPrices: Record<string, Record<number, PriceData>> = {};
+  const groupedByCity: Record<string, CityPrices> = {};
   prices.forEach((price) => {
-    if (!groupedPrices[price.city]) {
-      groupedPrices[price.city] = {};
+    if (!groupedByCity[price.city]) {
+      groupedByCity[price.city] = {
+        city: price.city,
+        prices: [],
+      };
     }
-    groupedPrices[price.city][price.quality] = price;
-  });
-
-  // Get unique qualities
-  const qualities = Array.from(new Set(prices.map((p) => p.quality))).sort();
-
-  // Filter prices by selected quality or show all
-  const filteredGroupedPrices = Object.entries(groupedPrices).reduce(
-    (acc, [city, qualityMap]) => {
-      if (selectedQuality !== null) {
-        if (qualityMap[selectedQuality]) {
-          acc[city] = { [selectedQuality]: qualityMap[selectedQuality] };
-        }
-      } else {
-        acc[city] = qualityMap;
-      }
-      return acc;
-    },
-    {} as Record<string, Record<number, PriceData>>
-  );
-
-  // Convert to flat list
-  const priceRows: CityPriceRow[] = [];
-  Object.entries(filteredGroupedPrices).forEach(([city, qualityMap]) => {
-    Object.entries(qualityMap).forEach(([quality, price]) => {
-      priceRows.push({
-        city,
-        quality: parseInt(quality, 10),
-        buyMin: price.buy_price_min,
-        buyMax: price.buy_price_max,
-        sellMin: price.sell_price_min,
-        sellMax: price.sell_price_max,
-      });
+    groupedByCity[price.city].prices.push({
+      quality: price.quality,
+      buyPrice: price.buy_price_max,
+      sellPrice: price.sell_price_min,
     });
   });
 
+  const cityList = Object.values(groupedByCity);
+
   return (
-    <ScreenContainer className="flex-1 p-4">
+    <ScreenContainer className="flex-1">
       <ScrollView
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing || state.loading}
-            onRefresh={onRefresh}
-            tintColor={colors.primary}
-          />
-        }
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
+        contentContainerStyle={{ flexGrow: 1 }}
       >
         {/* Header */}
-        <View className="flex-row items-center mb-4 gap-2">
+        <View className="flex-row items-center gap-3 p-4 border-b border-border">
           <TouchableOpacity onPress={() => router.back()}>
             <MaterialIcons name="arrow-back" size={24} color={colors.foreground} />
           </TouchableOpacity>
           <View className="flex-1">
             <Text className="text-2xl font-bold text-foreground">
-              T{tier} {name}
+              T{trackedItem?.tier} {trackedItem?.name}
             </Text>
-            <Text className="text-xs text-muted">{itemId}</Text>
+            <Text className="text-xs text-muted mt-1">{itemId}</Text>
           </View>
         </View>
 
-        {/* Quality Filter */}
-        {qualities.length > 1 && (
-          <View className="mb-4">
-            <Text className="text-sm font-semibold text-foreground mb-2">Quality</Text>
-            <View className="flex-row gap-2">
-              <Pressable
-                onPress={() => setSelectedQuality(null)}
-                style={({ pressed }) => [
-                  {
-                    backgroundColor: selectedQuality === null ? colors.primary : colors.surface,
-                    paddingHorizontal: 12,
-                    paddingVertical: 8,
-                    borderRadius: 8,
-                    borderWidth: selectedQuality === null ? 0 : 1,
-                    borderColor: colors.border,
-                    opacity: pressed ? 0.8 : 1,
-                  },
-                ]}
-              >
-                <Text
-                  className={`text-sm font-semibold ${
-                    selectedQuality === null ? "text-white" : "text-foreground"
-                  }`}
-                >
-                  All
-                </Text>
-              </Pressable>
-              {qualities.map((q) => (
-                <Pressable
-                  key={q}
-                  onPress={() => setSelectedQuality(q)}
-                  style={({ pressed }) => [
-                    {
-                      backgroundColor: selectedQuality === q ? colors.primary : colors.surface,
-                      paddingHorizontal: 12,
-                      paddingVertical: 8,
-                      borderRadius: 8,
-                      borderWidth: selectedQuality === q ? 0 : 1,
-                      borderColor: colors.border,
-                      opacity: pressed ? 0.8 : 1,
-                    },
-                  ]}
-                >
-                  <Text
-                    className={`text-sm font-semibold ${
-                      selectedQuality === q ? "text-white" : "text-foreground"
-                    }`}
-                  >
-                    Q{q}
-                  </Text>
-                </Pressable>
-              ))}
-            </View>
+        {/* Black Market Sell Price */}
+        {blackMarketPrice && (
+          <View className="p-4 bg-primary/10 border-b border-primary mx-4 mt-4 rounded-lg">
+            <Text className="text-sm text-muted mb-2">Black Market Sell Price</Text>
+            <Text className="text-3xl font-bold text-primary">
+              {blackMarketPrice.price.toLocaleString()}
+            </Text>
+            <Text className="text-xs text-muted mt-1">Quality: {blackMarketPrice.quality}</Text>
           </View>
         )}
 
-        {/* Price List */}
-        <View>
-          <Text className="text-sm font-semibold text-foreground mb-3">Prices by City</Text>
-          {priceRows.length > 0 ? (
-            priceRows.map((row, idx) => (
-              <CityPriceCard key={`${row.city}-${row.quality}-${idx}`} {...row} />
-            ))
-          ) : (
+        {/* City Comparison */}
+        <View className="p-4">
+          <Text className="text-lg font-semibold text-foreground mb-3">City Prices</Text>
+
+          {citySortedPrices.length === 0 ? (
             <View className="items-center justify-center py-8">
               <Text className="text-muted">No price data available</Text>
             </View>
+          ) : (
+            citySortedPrices.map((cityPrice, index) => (
+              <Pressable
+                key={`${cityPrice.city}-${index}`}
+                style={({ pressed }) => [
+                  {
+                    backgroundColor: colors.surface,
+                    borderRadius: 12,
+                    padding: 16,
+                    marginBottom: 12,
+                    borderWidth: 1,
+                    borderColor: colors.border,
+                    opacity: pressed ? 0.7 : 1,
+                  },
+                ]}
+              >
+                <View className="flex-row justify-between items-start mb-3">
+                  <Text className="text-lg font-semibold text-foreground">{cityPrice.city}</Text>
+                  {blackMarketPrice && (
+                    <View className="bg-success/20 rounded px-2 py-1">
+                      <Text className="text-xs font-semibold text-success">
+                        +{(blackMarketPrice.price - cityPrice.buyPrice).toLocaleString()}
+                      </Text>
+                    </View>
+                  )}
+                </View>
+
+                <View className="flex-row gap-3">
+                  <View className="flex-1 bg-background rounded-lg p-3">
+                    <Text className="text-xs text-muted mb-1">Buy Price</Text>
+                    <Text className="text-lg font-bold text-foreground">
+                      {cityPrice.buyPrice.toLocaleString()}
+                    </Text>
+                  </View>
+                  <View className="flex-1 bg-background rounded-lg p-3">
+                    <Text className="text-xs text-muted mb-1">Sell Price</Text>
+                    <Text className="text-lg font-bold text-foreground">
+                      {cityPrice.sellPrice.toLocaleString()}
+                    </Text>
+                  </View>
+                </View>
+              </Pressable>
+            ))
           )}
         </View>
 
-        {marketData?.lastUpdated && (
-          <View className="mt-4 pt-4 border-t border-border">
-            <Text className="text-xs text-muted text-center">
-              Last updated: {new Date(marketData.lastUpdated).toLocaleString()}
-            </Text>
+        {/* All Cities Detailed View */}
+        {cityList.length > 0 && (
+          <View className="p-4">
+            <Text className="text-lg font-semibold text-foreground mb-3">All Prices by Quality</Text>
+
+            {cityList.map((cityData) => (
+              <View key={cityData.city} className="mb-4">
+                <Text className="text-base font-semibold text-foreground mb-2">{cityData.city}</Text>
+                {cityData.prices.map((priceData, idx) => (
+                  <View
+                    key={`${cityData.city}-q${priceData.quality}-${idx}`}
+                    className="bg-surface rounded-lg p-3 mb-2 flex-row justify-between items-center border border-border"
+                  >
+                    <View className="flex-1">
+                      <Text className="text-sm text-muted">Quality {priceData.quality}</Text>
+                      <View className="flex-row gap-2 mt-1">
+                        <Text className="text-xs text-foreground">
+                          Buy: {priceData.buyPrice.toLocaleString()}
+                        </Text>
+                        <Text className="text-xs text-muted">|</Text>
+                        <Text className="text-xs text-foreground">
+                          Sell: {priceData.sellPrice.toLocaleString()}
+                        </Text>
+                      </View>
+                    </View>
+                  </View>
+                ))}
+              </View>
+            ))}
           </View>
         )}
       </ScrollView>

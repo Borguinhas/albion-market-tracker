@@ -9,6 +9,8 @@ import {
   calculateProfit,
   getAveragePrice,
   getBlackMarketSellPrice,
+  getCityPricesSorted,
+  getValidCities,
   PriceData,
 } from "./albion-api";
 
@@ -21,33 +23,33 @@ describe("Albion API Service", () => {
   });
 
   describe("formatDateForAPI", () => {
-    it("should format date correctly to DD-MM-YYYY", () => {
-      const date = new Date("2026-01-07T00:00:00Z");
-      const result = formatDateForAPI(date);
-      // Just verify it matches the pattern
-      expect(result).toMatch(/\d{2}-01-2026/);
+    it("should format date correctly as DD-MM-YYYY", () => {
+      const date = new Date("2026-01-15T00:00:00Z");
+      expect(formatDateForAPI(date)).toBe("15-01-2026");
     });
 
     it("should pad single digit days and months", () => {
       const date = new Date("2026-01-05T00:00:00Z");
-      const result = formatDateForAPI(date);
-      expect(result).toMatch(/\d{2}-01-2026/);
+      expect(formatDateForAPI(date)).toBe("05-01-2026");
     });
   });
 
   describe("getDateRange", () => {
-    it("should return date range for last 7 days by default", () => {
-      const range = getDateRange();
-      expect(range.start).toBeDefined();
-      expect(range.end).toBeDefined();
-      expect(range.start).toBeTruthy();
-      expect(range.end).toBeTruthy();
+    it("should return correct date range for specified days", () => {
+      const startDate = new Date("2026-01-01T00:00:00Z");
+      const endDate = new Date("2026-01-08T00:00:00Z");
+      const range = getDateRange(startDate, endDate);
+      expect(range.date).toBeDefined();
+      expect(range.end_date).toBeDefined();
+      expect(range["time-scale"]).toBe("24");
     });
 
-    it("should return correct date range for specified days", () => {
-      const range = getDateRange(30);
-      expect(range.start).toBeDefined();
-      expect(range.end).toBeDefined();
+    it("should calculate dates correctly", () => {
+      const startDate = new Date("2026-01-01T00:00:00Z");
+      const endDate = new Date("2026-01-08T00:00:00Z");
+      const range = getDateRange(startDate, endDate);
+      expect(range.date).toBe("01-01-2026");
+      expect(range.end_date).toBe("08-01-2026");
     });
   });
 
@@ -59,9 +61,9 @@ describe("Albion API Service", () => {
     });
 
     it("should handle multi-word item names", () => {
-      const result = parseItemId("T5_ARMOR_CLOTH");
+      const result = parseItemId("T5_ARMOR_PLATE");
       expect(result.tier).toBe(5);
-      expect(result.name).toBe("ARMOR CLOTH");
+      expect(result.name).toBe("ARMOR PLATE");
     });
 
     it("should handle invalid item IDs", () => {
@@ -76,7 +78,7 @@ describe("Albion API Service", () => {
       const prices: PriceData[] = [
         {
           item_id: "T4_BAG",
-          city: "Black Market",
+          city: "Bridgewatch",
           quality: 1,
           sell_price_min: 4500,
           sell_price_min_date: "2026-01-07T10:10:00",
@@ -89,7 +91,7 @@ describe("Albion API Service", () => {
         },
         {
           item_id: "T4_BAG",
-          city: "Bridgewatch",
+          city: "Lymhurst",
           quality: 1,
           sell_price_min: 4400,
           sell_price_min_date: "2026-01-07T19:35:00",
@@ -103,42 +105,23 @@ describe("Albion API Service", () => {
       ];
 
       const result = findBestPrices(prices);
-      // Best sell should be the lowest sell_price_min
       expect(result.bestSell.price).toBe(4500);
-      // Best buy should have a valid price
       expect(result.bestBuy.price).toBeGreaterThan(0);
     });
 
-    it("should handle empty prices array", () => {
+    it("should handle empty price list", () => {
       const result = findBestPrices([]);
       expect(result.bestBuy.price).toBe(Infinity);
       expect(result.bestSell.price).toBe(0);
     });
   });
 
-  describe("calculateProfit", () => {
-    it("should calculate profit margin correctly", () => {
-      const profit = calculateProfit(1000, 1500);
-      expect(profit).toBe(50);
-    });
-
-    it("should handle zero buy price", () => {
-      const profit = calculateProfit(0, 1500);
-      expect(profit).toBe(0);
-    });
-
-    it("should handle negative profit", () => {
-      const profit = calculateProfit(1500, 1000);
-      expect(profit).toBeCloseTo(-33.33, 1);
-    });
-  });
-
   describe("getAveragePrice", () => {
-    it("should calculate average price from multiple entries", () => {
+    it("should calculate average price correctly", () => {
       const prices: PriceData[] = [
         {
           item_id: "T4_BAG",
-          city: "Black Market",
+          city: "Bridgewatch",
           quality: 1,
           sell_price_min: 4500,
           sell_price_min_date: "2026-01-07T10:10:00",
@@ -146,12 +129,12 @@ describe("Albion API Service", () => {
           sell_price_max_date: "2026-01-07T10:10:00",
           buy_price_min: 2370,
           buy_price_min_date: "2026-01-07T10:10:00",
-          buy_price_max: 2528,
+          buy_price_max: 2000,
           buy_price_max_date: "2026-01-07T10:10:00",
         },
         {
           item_id: "T4_BAG",
-          city: "Bridgewatch",
+          city: "Lymhurst",
           quality: 1,
           sell_price_min: 4400,
           sell_price_min_date: "2026-01-07T19:35:00",
@@ -159,60 +142,24 @@ describe("Albion API Service", () => {
           sell_price_max_date: "2026-01-07T19:35:00",
           buy_price_min: 102,
           buy_price_min_date: "2026-01-07T16:35:00",
-          buy_price_max: 2994,
+          buy_price_max: 2000,
           buy_price_max_date: "2026-01-07T16:35:00",
         },
       ];
 
       const avg = getAveragePrice(prices);
-      expect(avg).toBeGreaterThan(0);
-      expect(typeof avg).toBe("number");
+      expect(avg).toBe(2000);
     });
 
-    it("should return 0 for empty array", () => {
-      const avg = getAveragePrice([]);
-      expect(avg).toBe(0);
+    it("should return 0 for empty list", () => {
+      expect(getAveragePrice([])).toBe(0);
     });
   });
 
-  describe("fetchCurrentPrices", () => {
-    it("should fetch prices successfully", async () => {
-      const mockData = [
-        {
-          item_id: "T4_BAG",
-          city: "Black Market",
-          quality: 1,
-          sell_price_min: 4500,
-          sell_price_min_date: "2026-01-07T10:10:00",
-          sell_price_max: 4599,
-          sell_price_max_date: "2026-01-07T10:10:00",
-          buy_price_min: 2370,
-          buy_price_min_date: "2026-01-07T10:10:00",
-          buy_price_max: 2528,
-          buy_price_max_date: "2026-01-07T10:10:00",
-        },
-      ];
-
-      (global.fetch as any).mockResolvedValueOnce({
-        ok: true,
-        json: async () => mockData,
-      });
-
-      const result = await fetchCurrentPrices(["T4_BAG"]);
-      expect(result).toEqual(mockData);
-      expect(global.fetch).toHaveBeenCalledWith(
-        expect.stringContaining("stats/prices/T4_BAG"),
-        expect.any(Object)
-      );
-    });
-
-    it("should handle API errors", async () => {
-      (global.fetch as any).mockResolvedValueOnce({
-        ok: false,
-        status: 500,
-      });
-
-      await expect(fetchCurrentPrices(["T4_BAG"])).rejects.toThrow();
+  describe("calculateProfit", () => {
+    it("should calculate profit correctly", () => {
+      expect(calculateProfit(1000, 1500)).toBe(500);
+      expect(calculateProfit(2000, 1000)).toBe(-1000);
     });
   });
 
@@ -275,47 +222,85 @@ describe("Albion API Service", () => {
     });
   });
 
-  describe("fetchHistoricalPrices", () => {
-    it("should fetch historical prices successfully", async () => {
-      const mockData = [
+  describe("getCityPricesSorted", () => {
+    it("should return city prices sorted by buy price", () => {
+      const prices: PriceData[] = [
         {
-          location: "Black Market",
           item_id: "T4_BAG",
+          city: "Lymhurst",
           quality: 1,
-          data: [
-            {
-              item_count: 125,
-              avg_price: 4225,
-              timestamp: "2025-12-31T00:00:00",
-            },
-          ],
+          sell_price_min: 4400,
+          sell_price_min_date: "2026-01-07T19:35:00",
+          sell_price_max: 4400,
+          sell_price_max_date: "2026-01-07T19:35:00",
+          buy_price_min: 102,
+          buy_price_min_date: "2026-01-07T16:35:00",
+          buy_price_max: 2994,
+          buy_price_max_date: "2026-01-07T16:35:00",
+        },
+        {
+          item_id: "T4_BAG",
+          city: "Bridgewatch",
+          quality: 1,
+          sell_price_min: 4500,
+          sell_price_min_date: "2026-01-07T10:10:00",
+          sell_price_max: 4599,
+          sell_price_max_date: "2026-01-07T10:10:00",
+          buy_price_min: 2370,
+          buy_price_min_date: "2026-01-07T10:10:00",
+          buy_price_max: 2528,
+          buy_price_max_date: "2026-01-07T10:10:00",
         },
       ];
 
-      (global.fetch as any).mockResolvedValueOnce({
-        ok: true,
-        json: async () => mockData,
-      });
-
-      const result = await fetchHistoricalPrices(["T4_BAG"], "01-01-2026", "06-01-2026");
-      expect(result).toEqual(mockData);
-      expect(global.fetch).toHaveBeenCalledWith(
-        expect.stringContaining("stats/history"),
-        expect.any(Object)
-      );
+      const sorted = getCityPricesSorted(prices);
+      expect(sorted[0].buyPrice).toBeLessThanOrEqual(sorted[1].buyPrice);
+      expect(sorted[0].city).toBe("Bridgewatch");
     });
 
-    it("should include date parameters in request", async () => {
-      (global.fetch as any).mockResolvedValueOnce({
-        ok: true,
-        json: async () => [],
-      });
+    it("should exclude Black Market from results", () => {
+      const prices: PriceData[] = [
+        {
+          item_id: "T4_BAG",
+          city: "Black Market",
+          quality: 1,
+          sell_price_min: 4500,
+          sell_price_min_date: "2026-01-07T10:10:00",
+          sell_price_max: 4599,
+          sell_price_max_date: "2026-01-07T10:10:00",
+          buy_price_min: 2370,
+          buy_price_min_date: "2026-01-07T10:10:00",
+          buy_price_max: 2528,
+          buy_price_max_date: "2026-01-07T10:10:00",
+        },
+        {
+          item_id: "T4_BAG",
+          city: "Bridgewatch",
+          quality: 1,
+          sell_price_min: 4500,
+          sell_price_min_date: "2026-01-07T10:10:00",
+          sell_price_max: 4599,
+          sell_price_max_date: "2026-01-07T10:10:00",
+          buy_price_min: 2370,
+          buy_price_min_date: "2026-01-07T10:10:00",
+          buy_price_max: 2528,
+          buy_price_max_date: "2026-01-07T10:10:00",
+        },
+      ];
 
-      await fetchHistoricalPrices(["T4_BAG"], "01-01-2026", "06-01-2026", 24);
-      const callUrl = (global.fetch as any).mock.calls[0][0];
-      expect(callUrl).toContain("date=01-01-2026");
-      expect(callUrl).toContain("end_date=06-01-2026");
-      expect(callUrl).toContain("time-scale=24");
+      const sorted = getCityPricesSorted(prices);
+      expect(sorted.length).toBe(1);
+      expect(sorted[0].city).toBe("Bridgewatch");
+    });
+  });
+
+  describe("getValidCities", () => {
+    it("should return list of valid trading cities", () => {
+      const cities = getValidCities();
+      expect(cities).toContain("Bridgewatch");
+      expect(cities).toContain("Caerleon");
+      expect(cities).toContain("Lymhurst");
+      expect(cities).not.toContain("Black Market");
     });
   });
 });

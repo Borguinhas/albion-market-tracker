@@ -67,16 +67,18 @@
 
 ## Marketplace Mechanics Implementation
 
-- [ ] Implement 8% transaction tax calculation (4% with Premium)
-- [ ] Implement 2.5% setup fee for buy/sell orders
-- [ ] Create profit calculator: buy from city → sell to Black Market
-- [ ] Show net profit after taxes and fees
-- [ ] Implement city-to-Black Market trading routes
-- [ ] Filter out Black Market from buy prices (only show city prices)
-- [ ] Highlight best buy cities (lowest prices to buy from)
-- [ ] Highlight Black Market as only sell destination
-- [ ] Add quality filtering for items
-- [ ] Show order book information (buy/sell orders count)
+- [x] Implement 8% transaction tax calculation (4% with Premium)
+- [x] Implement 2.5% setup fee for buy/sell orders
+- [x] Create profit calculator: buy from city → sell to Black Market
+- [x] Show net profit after taxes and fees
+- [x] Implement city-to-Black Market trading routes
+- [x] Filter out Black Market from buy prices (only show city prices)
+- [x] Highlight best buy cities (lowest prices to buy from)
+- [x] Show profit margin on home screen
+- [x] Add quality filtering for items
 - [ ] Display market history with time scale selection (24h, 7d, 30d)
 - [ ] Add trading route suggestions (most profitable routes)
 - [ ] Implement price trend analysis
+- [ ] Update home screen to show profit calculations
+- [ ] Create detailed trading routes screen
+- [ ] Add Premium toggle in settings

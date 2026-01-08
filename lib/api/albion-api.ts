@@ -1,9 +1,6 @@
-/**
- * Albion Online Data API Service
- * Handles all API calls to fetch market prices and historical data
- */
+import axios from "axios";
 
-const API_BASE_URL = "https://europe.albion-online-data.com/api/v2";
+const API_BASE = "https://europe.albion-online-data.com/api/v2/stats";
 
 export interface PriceData {
   item_id: string;
@@ -19,117 +16,87 @@ export interface PriceData {
   buy_price_max_date: string;
 }
 
-export interface HistoryDataPoint {
-  item_count: number;
-  avg_price: number;
-  timestamp: string;
-}
-
-export interface HistoryData {
+export interface HistoricalPrice {
   location: string;
-  item_id: string;
-  quality: number;
-  data: HistoryDataPoint[];
-}
-
-export interface TrackedItem {
-  id: string;
-  itemId: string;
-  name: string;
-  tier: number;
-  addedAt: string;
-  lastUpdated: string;
+  timestamp: string;
+  avg_price: number;
+  price_min: number;
+  price_max: number;
+  volume: number;
 }
 
 /**
- * Fetch current prices for specified items
- * @param itemIds - Array of item IDs (e.g., ['T4_BAG', 'T5_BAG'])
- * @returns Array of price data for all cities and qualities
+ * List of valid Albion cities (excludes Black Market for buying)
+ */
+const VALID_CITIES = [
+  "Bridgewatch",
+  "Caerleon",
+  "Fort Sterling",
+  "Lymhurst",
+  "Martlock",
+];
+
+/**
+ * Fetch current prices for items from all cities
+ * Filters out Black Market from buy prices (only for selling)
  */
 export async function fetchCurrentPrices(itemIds: string[]): Promise<PriceData[]> {
   try {
-    const itemsString = itemIds.join(",");
-    const response = await fetch(
-      `${API_BASE_URL}/stats/prices/${itemsString}`,
-      {
-        method: "GET",
-        headers: {
-          "Content-Type": "application/json",
-        },
-      }
+    const itemsQuery = itemIds.join(",");
+    const response = await axios.get<PriceData[]>(
+      `${API_BASE}/prices/${itemsQuery}`
     );
 
-    if (!response.ok) {
-      throw new Error(`API error: ${response.status}`);
-    }
-
-    const data = await response.json();
-    return data as PriceData[];
+    // Filter to only include valid cities (exclude Black Market for buying)
+    return response.data.filter((price) => VALID_CITIES.includes(price.city));
   } catch (error) {
     console.error("Error fetching current prices:", error);
-    throw error;
+    throw new Error(`API error: ${error instanceof Error ? error.message : "Unknown error"}`);
   }
 }
 
 /**
- * Fetch historical price data for specified items
- * @param itemIds - Array of item IDs
- * @param startDate - Start date in format 'DD-MM-YYYY'
- * @param endDate - End date in format 'DD-MM-YYYY'
- * @param timeScale - Time scale in hours (default: 24 for daily)
- * @returns Array of historical price data
+ * Fetch historical prices for items
  */
 export async function fetchHistoricalPrices(
   itemIds: string[],
-  startDate: string,
-  endDate: string,
-  timeScale: number = 24
-): Promise<HistoryData[]> {
+  startDate: Date = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
+  endDate: Date = new Date()
+): Promise<HistoricalPrice[]> {
   try {
-    const itemsString = itemIds.join(",");
-    const response = await fetch(
-      `${API_BASE_URL}/stats/history/${itemsString}?date=${startDate}&end_date=${endDate}&time-scale=${timeScale}`,
-      {
-        method: "GET",
-        headers: {
-          "Content-Type": "application/json",
-        },
-      }
+    const itemsQuery = itemIds.join(",");
+    const params = getDateRange(startDate, endDate);
+
+    const response = await axios.get<HistoricalPrice[]>(
+      `${API_BASE}/history/${itemsQuery}`,
+      { params }
     );
 
-    if (!response.ok) {
-      throw new Error(`API error: ${response.status}`);
-    }
-
-    const data = await response.json();
-    return data as HistoryData[];
+    return response.data;
   } catch (error) {
     console.error("Error fetching historical prices:", error);
-    throw error;
+    throw new Error(`API error: ${error instanceof Error ? error.message : "Unknown error"}`);
   }
 }
 
 /**
- * Format date to DD-MM-YYYY format
+ * Format date for API (DD-MM-YYYY)
  */
 export function formatDateForAPI(date: Date): string {
-  const day = String(date.getDate()).padStart(2, "0");
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const year = date.getFullYear();
+  const day = String(date.getUTCDate()).padStart(2, "0");
+  const month = String(date.getUTCMonth() + 1).padStart(2, "0");
+  const year = date.getUTCFullYear();
   return `${day}-${month}-${year}`;
 }
 
 /**
- * Get date range for last N days
+ * Get date range parameters for API
  */
-export function getDateRange(daysBack: number = 7): { start: string; end: string } {
-  const endDate = new Date();
-  const startDate = new Date();
-  startDate.setDate(startDate.getDate() - daysBack);
-
+export function getDateRange(startDate: Date, endDate: Date) {
   return {
-    start: formatDateForAPI(startDate),
-    end: formatDateForAPI(endDate),
+    date: formatDateForAPI(startDate),
+    end_date: formatDateForAPI(endDate),
+    "time-scale": "24",
   };
 }
 
@@ -150,12 +117,14 @@ export function parseItemId(itemId: string): { tier: number; name: string } {
 
 /**
  * Get best buy and sell opportunities from price data
+ * Only considers valid cities (no Black Market for buying)
  */
 export function findBestPrices(prices: PriceData[]) {
   let bestBuy = { city: "", price: Infinity, quality: 0 };
   let bestSell = { city: "", price: 0, quality: 0 };
 
   prices.forEach((price) => {
+    // Find best buy price (lowest buy_price_max from cities)
     if (price.buy_price_max > 0 && price.buy_price_max < bestBuy.price) {
       bestBuy = {
         city: price.city,
@@ -164,6 +133,7 @@ export function findBestPrices(prices: PriceData[]) {
       };
     }
 
+    // Find best sell price (highest sell_price_min from cities)
     if (price.sell_price_min > bestSell.price) {
       bestSell = {
         city: price.city,
@@ -177,32 +147,24 @@ export function findBestPrices(prices: PriceData[]) {
 }
 
 /**
- * Calculate profit margin between buy and sell
- */
-export function calculateProfit(buyPrice: number, sellPrice: number): number {
-  if (buyPrice === 0) return 0;
-  return ((sellPrice - buyPrice) / buyPrice) * 100;
-}
-
-/**
- * Get average price from price data
+ * Calculate average price from all city prices
  */
 export function getAveragePrice(prices: PriceData[]): number {
   if (prices.length === 0) return 0;
-
-  const total = prices.reduce((sum, price) => {
-    const avg = (price.buy_price_max + price.sell_price_min) / 2;
-    return sum + (avg > 0 ? avg : 0);
-  }, 0);
-
-  return Math.round(total / prices.length);
+  const sum = prices.reduce((acc, price) => acc + price.buy_price_max, 0);
+  return Math.round(sum / prices.length);
 }
 
+/**
+ * Calculate profit between two prices
+ */
+export function calculateProfit(buyPrice: number, sellPrice: number): number {
+  return sellPrice - buyPrice;
+}
 
 /**
- * NOTE: Items can only be sold to Black Market
- * When filtering prices, prioritize Black Market sell prices for maximum profit
- * The API returns prices for all cities, but only Black Market accepts item sales
+ * Get Black Market sell price from price data
+ * Black Market is the ONLY destination for selling items
  */
 export function getBlackMarketSellPrice(prices: PriceData[]): { price: number; quality: number } | null {
   const blackMarketPrices = prices.filter((p) => p.city === "Black Market");
@@ -219,4 +181,26 @@ export function getBlackMarketSellPrice(prices: PriceData[]): { price: number; q
   });
 
   return bestPrice.price > 0 ? bestPrice : null;
+}
+
+/**
+ * Get all city prices sorted by buy price (lowest first)
+ * Useful for finding best buying opportunities
+ */
+export function getCityPricesSorted(prices: PriceData[]): Array<{ city: string; buyPrice: number; sellPrice: number }> {
+  return prices
+    .filter((p) => VALID_CITIES.includes(p.city))
+    .map((p) => ({
+      city: p.city,
+      buyPrice: p.buy_price_max,
+      sellPrice: p.sell_price_min,
+    }))
+    .sort((a, b) => a.buyPrice - b.buyPrice);
+}
+
+/**
+ * Get list of valid trading cities
+ */
+export function getValidCities(): string[] {
+  return VALID_CITIES;
 }

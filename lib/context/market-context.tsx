@@ -1,14 +1,13 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import React, { createContext, useContext, useEffect, useReducer, ReactNode } from "react";
 import {
   fetchCurrentPrices,
   fetchHistoricalPrices,
   formatDateForAPI,
-  getDateRange,
   parseItemId,
   PriceData,
-  HistoryData,
+  HistoricalPrice,
 } from "@/lib/api/albion-api";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 export interface TrackedItem {
   id: string;
@@ -28,7 +27,7 @@ export interface MarketData {
 
 export interface HistoricalData {
   itemId: string;
-  history: HistoryData[];
+  history: HistoricalPrice[];
   lastUpdated: string;
   loading: boolean;
   error: string | null;
@@ -48,13 +47,9 @@ type MarketAction =
   | { type: "REMOVE_ITEM"; payload: string }
   | { type: "SET_TRACKED_ITEMS"; payload: TrackedItem[] }
   | { type: "SET_PRICES"; payload: { itemId: string; prices: PriceData[] } }
-  | { type: "SET_PRICE_LOADING"; payload: { itemId: string; loading: boolean } }
-  | { type: "SET_PRICE_ERROR"; payload: { itemId: string; error: string | null } }
-  | { type: "SET_HISTORY"; payload: { itemId: string; history: HistoryData[] } }
-  | { type: "SET_HISTORY_LOADING"; payload: { itemId: string; loading: boolean } }
-  | { type: "SET_HISTORY_ERROR"; payload: { itemId: string; error: string | null } }
+  | { type: "SET_HISTORY"; payload: { itemId: string; history: HistoricalPrice[] } }
   | { type: "SET_GLOBAL_LOADING"; payload: boolean }
-  | { type: "SET_GLOBAL_ERROR"; payload: string | null }
+  | { type: "SET_ERROR"; payload: string | null }
   | { type: "SET_LAST_REFRESH"; payload: string };
 
 const initialState: MarketState = {
@@ -74,16 +69,14 @@ function marketReducer(state: MarketState, action: MarketAction): MarketState {
         trackedItems: [...state.trackedItems, action.payload],
       };
 
-    case "REMOVE_ITEM": {
-      const { [action.payload]: _, ...remainingMarketData } = state.marketData;
-      const { [action.payload]: __, ...remainingHistoricalData } = state.historicalData;
+    case "REMOVE_ITEM":
       return {
         ...state,
         trackedItems: state.trackedItems.filter((item) => item.id !== action.payload),
-        marketData: remainingMarketData,
-        historicalData: remainingHistoricalData,
+        marketData: Object.fromEntries(
+          Object.entries(state.marketData).filter(([key]) => key !== action.payload)
+        ),
       };
-    }
 
     case "SET_TRACKED_ITEMS":
       return {
@@ -106,31 +99,6 @@ function marketReducer(state: MarketState, action: MarketAction): MarketState {
         },
       };
 
-    case "SET_PRICE_LOADING":
-      return {
-        ...state,
-        marketData: {
-          ...state.marketData,
-          [action.payload.itemId]: {
-            ...state.marketData[action.payload.itemId],
-            loading: action.payload.loading,
-          },
-        },
-      };
-
-    case "SET_PRICE_ERROR":
-      return {
-        ...state,
-        marketData: {
-          ...state.marketData,
-          [action.payload.itemId]: {
-            ...state.marketData[action.payload.itemId],
-            error: action.payload.error,
-            loading: false,
-          },
-        },
-      };
-
     case "SET_HISTORY":
       return {
         ...state,
@@ -146,38 +114,13 @@ function marketReducer(state: MarketState, action: MarketAction): MarketState {
         },
       };
 
-    case "SET_HISTORY_LOADING":
-      return {
-        ...state,
-        historicalData: {
-          ...state.historicalData,
-          [action.payload.itemId]: {
-            ...state.historicalData[action.payload.itemId],
-            loading: action.payload.loading,
-          },
-        },
-      };
-
-    case "SET_HISTORY_ERROR":
-      return {
-        ...state,
-        historicalData: {
-          ...state.historicalData,
-          [action.payload.itemId]: {
-            ...state.historicalData[action.payload.itemId],
-            error: action.payload.error,
-            loading: false,
-          },
-        },
-      };
-
     case "SET_GLOBAL_LOADING":
       return {
         ...state,
         loading: action.payload,
       };
 
-    case "SET_GLOBAL_ERROR":
+    case "SET_ERROR":
       return {
         ...state,
         error: action.payload,
@@ -198,9 +141,8 @@ interface MarketContextType {
   state: MarketState;
   addItem: (itemId: string) => Promise<void>;
   removeItem: (id: string) => Promise<void>;
-  refreshPrices: (itemIds?: string[]) => Promise<void>;
+  refreshPrices: () => Promise<void>;
   refreshHistory: (itemIds?: string[], daysBack?: number) => Promise<void>;
-  loadTrackedItems: () => Promise<void>;
 }
 
 const MarketContext = createContext<MarketContextType | undefined>(undefined);
@@ -217,7 +159,7 @@ export function MarketProvider({ children }: { children: ReactNode }) {
     try {
       const stored = await AsyncStorage.getItem("trackedItems");
       if (stored) {
-        const items = JSON.parse(stored) as TrackedItem[];
+        const items = JSON.parse(stored);
         dispatch({ type: "SET_TRACKED_ITEMS", payload: items });
       }
     } catch (error) {
@@ -225,52 +167,72 @@ export function MarketProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const saveTrackedItems = async (items: TrackedItem[]) => {
+    try {
+      await AsyncStorage.setItem("trackedItems", JSON.stringify(items));
+    } catch (error) {
+      console.error("Error saving tracked items:", error);
+    }
+  };
+
   const addItem = async (itemId: string) => {
     try {
+      dispatch({ type: "SET_GLOBAL_LOADING", payload: true });
+
+      // Fetch prices for the new item
+      const prices = await fetchCurrentPrices([itemId]);
+
+      // Parse item info
       const { tier, name } = parseItemId(itemId);
-      const newItem: TrackedItem = {
-        id: `${itemId}_${Date.now()}`,
+
+      // Create tracked item
+      const trackedItem: TrackedItem = {
+        id: `${itemId}-${Date.now()}`,
         itemId,
         name,
         tier,
         addedAt: new Date().toISOString(),
       };
 
-      dispatch({ type: "ADD_ITEM", payload: newItem });
+      // Add to state
+      dispatch({ type: "ADD_ITEM", payload: trackedItem });
+      dispatch({ type: "SET_PRICES", payload: { itemId, prices } });
 
       // Save to storage
-      const updated = [...state.trackedItems, newItem];
-      await AsyncStorage.setItem("trackedItems", JSON.stringify(updated));
+      const updatedItems = [...state.trackedItems, trackedItem];
+      await saveTrackedItems(updatedItems);
 
-      // Fetch prices for new item
-      await refreshPrices([itemId]);
+      dispatch({ type: "SET_GLOBAL_LOADING", payload: false });
     } catch (error) {
-      console.error("Error adding item:", error);
-      dispatch({ type: "SET_GLOBAL_ERROR", payload: "Failed to add item" });
+      const errorMessage = error instanceof Error ? error.message : "Failed to add item";
+      dispatch({ type: "SET_ERROR", payload: errorMessage });
+      dispatch({ type: "SET_GLOBAL_LOADING", payload: false });
+      throw error;
     }
   };
 
   const removeItem = async (id: string) => {
     try {
       dispatch({ type: "REMOVE_ITEM", payload: id });
-
-      // Save to storage
-      const updated = state.trackedItems.filter((item) => item.id !== id);
-      await AsyncStorage.setItem("trackedItems", JSON.stringify(updated));
+      const updatedItems = state.trackedItems.filter((item) => item.id !== id);
+      await saveTrackedItems(updatedItems);
     } catch (error) {
       console.error("Error removing item:", error);
-      dispatch({ type: "SET_GLOBAL_ERROR", payload: "Failed to remove item" });
     }
   };
 
-  const refreshPrices = async (itemIds?: string[]) => {
+  const refreshPrices = async () => {
     try {
-      const ids = itemIds || state.trackedItems.map((item) => item.itemId);
-      if (ids.length === 0) return;
-
       dispatch({ type: "SET_GLOBAL_LOADING", payload: true });
+      dispatch({ type: "SET_ERROR", payload: null });
 
-      const prices = await fetchCurrentPrices(ids);
+      const itemIds = state.trackedItems.map((item) => item.itemId);
+      if (itemIds.length === 0) {
+        dispatch({ type: "SET_GLOBAL_LOADING", payload: false });
+        return;
+      }
+
+      const prices = await fetchCurrentPrices(itemIds);
 
       // Group prices by item ID
       const groupedByItem = prices.reduce(
@@ -292,9 +254,10 @@ export function MarketProvider({ children }: { children: ReactNode }) {
       dispatch({ type: "SET_LAST_REFRESH", payload: new Date().toISOString() });
       dispatch({ type: "SET_GLOBAL_LOADING", payload: false });
     } catch (error) {
-      console.error("Error refreshing prices:", error);
-      dispatch({ type: "SET_GLOBAL_ERROR", payload: "Failed to refresh prices" });
+      const errorMessage = error instanceof Error ? error.message : "Failed to refresh prices";
+      dispatch({ type: "SET_ERROR", payload: errorMessage });
       dispatch({ type: "SET_GLOBAL_LOADING", payload: false });
+      console.error("Error refreshing prices:", error);
     }
   };
 
@@ -305,49 +268,44 @@ export function MarketProvider({ children }: { children: ReactNode }) {
 
       dispatch({ type: "SET_GLOBAL_LOADING", payload: true });
 
-      const { start, end } = getDateRange(daysBack);
-      const history = await fetchHistoricalPrices(ids, start, end);
+      const startDate = new Date(Date.now() - daysBack * 24 * 60 * 60 * 1000);
+      const endDate = new Date();
+      const history = await fetchHistoricalPrices(ids, startDate, endDate);
 
-      // Group history by item ID
-      const groupedByItem = history.reduce(
+      // Group history by location (city)
+      const groupedByLocation = history.reduce(
         (acc, item) => {
-          if (!acc[item.item_id]) {
-            acc[item.item_id] = [];
+          if (!acc[item.location]) {
+            acc[item.location] = [];
           }
-          acc[item.item_id].push(item);
+          acc[item.location].push(item);
           return acc;
         },
-        {} as Record<string, HistoryData[]>
+        {} as Record<string, HistoricalPrice[]>
       );
 
-      // Update state for each item
-      Object.entries(groupedByItem).forEach(([itemId, itemHistory]) => {
-        dispatch({ type: "SET_HISTORY", payload: { itemId, history: itemHistory } });
+      // Update state for each location
+      Object.entries(groupedByLocation).forEach(([location, locationHistory]) => {
+        dispatch({ type: "SET_HISTORY", payload: { itemId: location, history: locationHistory } });
       });
 
       dispatch({ type: "SET_GLOBAL_LOADING", payload: false });
     } catch (error) {
       console.error("Error refreshing history:", error);
-      dispatch({ type: "SET_GLOBAL_ERROR", payload: "Failed to refresh history" });
       dispatch({ type: "SET_GLOBAL_LOADING", payload: false });
     }
   };
 
-  const value: MarketContextType = {
-    state,
-    addItem,
-    removeItem,
-    refreshPrices,
-    refreshHistory,
-    loadTrackedItems,
-  };
-
-  return <MarketContext.Provider value={value}>{children}</MarketContext.Provider>;
+  return (
+    <MarketContext.Provider value={{ state, addItem, removeItem, refreshPrices, refreshHistory }}>
+      {children}
+    </MarketContext.Provider>
+  );
 }
 
 export function useMarket() {
   const context = useContext(MarketContext);
-  if (context === undefined) {
+  if (!context) {
     throw new Error("useMarket must be used within a MarketProvider");
   }
   return context;
