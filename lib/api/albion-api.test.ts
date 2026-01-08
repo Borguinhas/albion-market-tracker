@@ -298,6 +298,7 @@ describe("Albion API Service", () => {
     it("should return list of valid trading cities", () => {
       const cities = getValidCities();
       expect(cities).toContain("Bridgewatch");
+      expect(cities).toContain("Brecilien");
       expect(cities).toContain("Caerleon");
       expect(cities).toContain("Lymhurst");
       expect(cities).not.toContain("Black Market");

@@ -82,3 +82,7 @@
 - [ ] Update home screen to show profit calculations
 - [ ] Create detailed trading routes screen
 - [ ] Add Premium toggle in settings
+
+## Bug Fixes & Updates
+
+- [x] Add Brecilien to valid trading cities list

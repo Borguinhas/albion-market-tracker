@@ -30,6 +30,7 @@ export interface HistoricalPrice {
  */
 const VALID_CITIES = [
   "Bridgewatch",
+  "Brecilien",
   "Caerleon",
   "Fort Sterling",
   "Lymhurst",
