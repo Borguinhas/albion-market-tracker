@@ -63,3 +63,20 @@
 - [ ] Create app icon variants (iOS, Android)
 - [ ] Test on Android device/emulator
 - [ ] Final polish and bug fixes
+
+
+## Marketplace Mechanics Implementation
+
+- [ ] Implement 8% transaction tax calculation (4% with Premium)
+- [ ] Implement 2.5% setup fee for buy/sell orders
+- [ ] Create profit calculator: buy from city → sell to Black Market
+- [ ] Show net profit after taxes and fees
+- [ ] Implement city-to-Black Market trading routes
+- [ ] Filter out Black Market from buy prices (only show city prices)
+- [ ] Highlight best buy cities (lowest prices to buy from)
+- [ ] Highlight Black Market as only sell destination
+- [ ] Add quality filtering for items
+- [ ] Show order book information (buy/sell orders count)
+- [ ] Display market history with time scale selection (24h, 7d, 30d)
+- [ ] Add trading route suggestions (most profitable routes)
+- [ ] Implement price trend analysis
