@@ -1,34 +1,11 @@
 import { FlatList, Text, View, TextInput, TouchableOpacity, Pressable } from "react-native";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useRouter } from "expo-router";
 import { ScreenContainer } from "@/components/screen-container";
 import { useMarket } from "@/lib/context/market-context";
 import { useColors } from "@/hooks/use-colors";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
-
-// Available items from the API
-const AVAILABLE_ITEMS = [
-  "T4_BAG",
-  "T5_BAG",
-  "T6_BAG",
-  "T7_BAG",
-  "T8_BAG",
-  "T4_ARMOR_CLOTH",
-  "T5_ARMOR_CLOTH",
-  "T6_ARMOR_CLOTH",
-  "T4_ARMOR_LEATHER",
-  "T5_ARMOR_LEATHER",
-  "T6_ARMOR_LEATHER",
-  "T4_ARMOR_PLATE",
-  "T5_ARMOR_PLATE",
-  "T6_ARMOR_PLATE",
-  "T4_WEAPON_SWORD",
-  "T5_WEAPON_SWORD",
-  "T6_WEAPON_SWORD",
-  "T4_WEAPON_AXE",
-  "T5_WEAPON_AXE",
-  "T6_WEAPON_AXE",
-];
+import { AVAILABLE_ITEMS } from "@/lib/constants/items-catalog";
 
 interface ItemOption {
   id: string;
@@ -36,17 +13,17 @@ interface ItemOption {
   name: string;
 }
 
-function parseItems(items: string[]): ItemOption[] {
+function parseItems(items: typeof AVAILABLE_ITEMS): ItemOption[] {
   return items.map((item) => {
-    const match = item.match(/T(\d+)_(.*)/);
+    const match = item.id.match(/T(\d+)_(.*)/);
     if (match) {
       return {
-        id: item,
+        id: item.id,
         tier: parseInt(match[1], 10),
-        name: match[2].replace(/_/g, " "),
+        name: item.name,
       };
     }
-    return { id: item, tier: 0, name: item };
+    return { id: item.id, tier: 0, name: item.name };
   });
 }
 
@@ -99,11 +76,15 @@ export default function AddItemScreen() {
   const [search, setSearch] = useState("");
   const [selectedItems, setSelectedItems] = useState<string[]>([]);
 
-  const items = parseItems(AVAILABLE_ITEMS);
-  const filteredItems = items.filter(
-    (item) =>
-      item.name.toLowerCase().includes(search.toLowerCase()) ||
-      item.id.toLowerCase().includes(search.toLowerCase())
+  const items = useMemo(() => parseItems(AVAILABLE_ITEMS), []);
+  const filteredItems = useMemo(
+    () =>
+      items.filter(
+        (item) =>
+          item.name.toLowerCase().includes(search.toLowerCase()) ||
+          item.id.toLowerCase().includes(search.toLowerCase())
+      ),
+    [items, search]
   );
 
   const toggleItem = (itemId: string) => {
@@ -129,6 +110,9 @@ export default function AddItemScreen() {
           <MaterialIcons name="arrow-back" size={24} color={colors.foreground} />
         </TouchableOpacity>
         <Text className="text-2xl font-bold text-foreground flex-1">Add Items</Text>
+        <Text className="text-xs text-muted">
+          {availableItems.length} available
+        </Text>
       </View>
 
       <View className="flex-row items-center bg-surface rounded-lg px-4 py-2 mb-4 border border-border">
@@ -156,7 +140,9 @@ export default function AddItemScreen() {
         contentContainerStyle={{ flexGrow: 1 }}
         ListEmptyComponent={
           <View className="items-center justify-center py-8">
-            <Text className="text-muted">No items found</Text>
+            <Text className="text-muted">
+              {search ? "No items found" : "All items already tracked"}
+            </Text>
           </View>
         }
       />

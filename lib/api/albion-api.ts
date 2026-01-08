@@ -197,3 +197,26 @@ export function getAveragePrice(prices: PriceData[]): number {
 
   return Math.round(total / prices.length);
 }
+
+
+/**
+ * NOTE: Items can only be sold to Black Market
+ * When filtering prices, prioritize Black Market sell prices for maximum profit
+ * The API returns prices for all cities, but only Black Market accepts item sales
+ */
+export function getBlackMarketSellPrice(prices: PriceData[]): { price: number; quality: number } | null {
+  const blackMarketPrices = prices.filter((p) => p.city === "Black Market");
+  if (blackMarketPrices.length === 0) return null;
+
+  let bestPrice = { price: 0, quality: 0 };
+  blackMarketPrices.forEach((price) => {
+    if (price.sell_price_min > bestPrice.price) {
+      bestPrice = {
+        price: price.sell_price_min,
+        quality: price.quality,
+      };
+    }
+  });
+
+  return bestPrice.price > 0 ? bestPrice : null;
+}

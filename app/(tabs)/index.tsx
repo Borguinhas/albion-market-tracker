@@ -4,7 +4,7 @@ import { useRouter } from "expo-router";
 import { ScreenContainer } from "@/components/screen-container";
 import { useMarket } from "@/lib/context/market-context";
 import { useColors } from "@/hooks/use-colors";
-import { getAveragePrice, findBestPrices } from "@/lib/api/albion-api";
+import { getAveragePrice, findBestPrices, getBlackMarketSellPrice } from "@/lib/api/albion-api";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 
 interface ItemCardProps {
@@ -19,6 +19,7 @@ function ItemCard({ itemId, name, tier, prices, onPress }: ItemCardProps) {
   const colors = useColors();
   const avgPrice = getAveragePrice(prices);
   const { bestBuy, bestSell } = findBestPrices(prices);
+  const blackMarketSell = getBlackMarketSellPrice(prices);
 
   return (
     <Pressable
@@ -59,10 +60,10 @@ function ItemCard({ itemId, name, tier, prices, onPress }: ItemCardProps) {
             {bestBuy.city} @ {bestBuy.price}
           </Text>
         </View>
-        <View className="flex-1 bg-warning/10 rounded-lg p-2">
-          <Text className="text-xs text-muted">Best Sell</Text>
-          <Text className="text-sm font-semibold text-warning">
-            {bestSell.city} @ {bestSell.price}
+        <View className="flex-1 bg-primary/10 rounded-lg p-2 border border-primary">
+          <Text className="text-xs text-muted">Black Market</Text>
+          <Text className="text-sm font-semibold text-primary">
+            {blackMarketSell ? blackMarketSell.price.toLocaleString() : "N/A"}
           </Text>
         </View>
       </View>
@@ -107,7 +108,7 @@ export default function HomeScreen() {
           <MaterialIcons name="shopping-bag" size={64} color={colors.muted} />
           <Text className="text-xl font-semibold text-foreground">No Items Tracked</Text>
           <Text className="text-sm text-muted text-center px-4">
-            Add items to track their prices across different cities
+            Add items to track their prices. All items can only be sold to Black Market.
           </Text>
           <TouchableOpacity
             onPress={handleAddItem}

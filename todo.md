@@ -13,6 +13,9 @@
 - [x] Refresh mechanism (pull-to-refresh and button)
 - [x] Search/filter functionality for items
 - [x] Add new item screen with catalog
+- [x] Update items catalog with 6249 complete Albion items
+- [x] Implement Black Market sell price highlighting
+- [x] Add Black Market constraint to API service
 
 ## UI/UX Features
 

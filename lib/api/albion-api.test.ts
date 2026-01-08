@@ -8,6 +8,7 @@ import {
   findBestPrices,
   calculateProfit,
   getAveragePrice,
+  getBlackMarketSellPrice,
   PriceData,
 } from "./albion-api";
 
@@ -212,6 +213,65 @@ describe("Albion API Service", () => {
       });
 
       await expect(fetchCurrentPrices(["T4_BAG"])).rejects.toThrow();
+    });
+  });
+
+  describe("getBlackMarketSellPrice", () => {
+    it("should return Black Market sell price", () => {
+      const prices: PriceData[] = [
+        {
+          item_id: "T4_BAG",
+          city: "Black Market",
+          quality: 1,
+          sell_price_min: 4500,
+          sell_price_min_date: "2026-01-07T10:10:00",
+          sell_price_max: 4599,
+          sell_price_max_date: "2026-01-07T10:10:00",
+          buy_price_min: 2370,
+          buy_price_min_date: "2026-01-07T10:10:00",
+          buy_price_max: 2528,
+          buy_price_max_date: "2026-01-07T10:10:00",
+        },
+        {
+          item_id: "T4_BAG",
+          city: "Bridgewatch",
+          quality: 1,
+          sell_price_min: 4400,
+          sell_price_min_date: "2026-01-07T19:35:00",
+          sell_price_max: 4400,
+          sell_price_max_date: "2026-01-07T19:35:00",
+          buy_price_min: 102,
+          buy_price_min_date: "2026-01-07T16:35:00",
+          buy_price_max: 2994,
+          buy_price_max_date: "2026-01-07T16:35:00",
+        },
+      ];
+
+      const result = getBlackMarketSellPrice(prices);
+      expect(result).not.toBeNull();
+      expect(result?.price).toBe(4500);
+      expect(result?.quality).toBe(1);
+    });
+
+    it("should return null if no Black Market prices", () => {
+      const prices: PriceData[] = [
+        {
+          item_id: "T4_BAG",
+          city: "Bridgewatch",
+          quality: 1,
+          sell_price_min: 4400,
+          sell_price_min_date: "2026-01-07T19:35:00",
+          sell_price_max: 4400,
+          sell_price_max_date: "2026-01-07T19:35:00",
+          buy_price_min: 102,
+          buy_price_min_date: "2026-01-07T16:35:00",
+          buy_price_max: 2994,
+          buy_price_max_date: "2026-01-07T16:35:00",
+        },
+      ];
+
+      const result = getBlackMarketSellPrice(prices);
+      expect(result).toBeNull();
     });
   });
 
